@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,8 +29,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var wg sync.WaitGroup
 	for _, cluster := range DefaultConfig.Clusters {
-		go PeriodicallyPrune(ctx, cluster, DefaultConfig.Age)
+		wg.Add(1)
+		go PeriodicallyPrune(&wg, ctx, cluster, DefaultConfig.Age)
 	}
 
 	sigChan := make(chan os.Signal, 1)
@@ -40,9 +43,10 @@ func main() {
 		log.Info("Receieved %s, shutting down", sig)
 		cancel()
 	}
+	wg.Wait()
 }
 
-func PeriodicallyPrune(ctx context.Context, cluster string, age time.Duration) {
+func PeriodicallyPrune(wg *sync.WaitGroup, ctx context.Context, cluster string, age time.Duration) {
 	log.Info("Begging monitoring on %s", cluster)
 	pruner := lib.NewPruner(cluster)
 
@@ -67,6 +71,7 @@ func PeriodicallyPrune(ctx context.Context, cluster string, age time.Duration) {
 			}
 		case <-ctx.Done():
 			log.Info("stopping monitoring on %s", cluster)
+			wg.Done()
 			return
 		}
 	}
